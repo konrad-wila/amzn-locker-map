@@ -65,21 +65,37 @@ let currentPanelKind = 'locker';   // 'locker' | 'kiosk'
 let clickModeOn = false;
 
 // Amazon Returns Kiosks at Morrisons stores. Sourced from morrisons_kiosks.json
-// (see harvest_morrisons_kiosks.py). Kept in their own layer so they don't
-// interact with the locker filters/clusters.
+// (see harvest_morrisons_kiosks.py).
 let kiosks = [];
 const kiosksById = new Map();
-let kioskLayer = null;
 let showKiosks = false;
+
+// InPost UK locker network. Sourced from inpost_lockers.json
+// (see harvest_inpost.py).
+let inpostPoints = [];
+const inpostById = new Map();
+let showInpost = false;
+const activeInpostTypes = new Set();
+
+// Quadient (Parcel Pending) open UK locker network — 200ish sites at host
+// partners like MFG forecourts, Stonegate pubs, Northern rail stations.
+// Sourced from quadient_lockers.json (see harvest_quadient.py).
+let quadientPoints = [];
+const quadientById = new Map();
+let showQuadient = false;
+
+// Yeep — UK locker network (mostly DPD-carrier, ~26% also UPS). Sourced
+// from yeep_lockers.json (see harvest_yeep.py).
+let yeepPoints = [];
+const yeepById = new Map();
+let showYeep = false;
 
 let stations = [];                // [{name, lat, lng, kind, network}]
 let stationGrid = null;           // spatial grid: Map<"i,j", station[]>
 const STATION_GRID_KM = 5;        // cell size; lookups expand by ceil(radius/cell)
 let nearStationOn = false;
 let stationRadiusM = 500;
-const activeStationKinds = new Set(STATION_KINDS);
-let nearLockerIds = null;         // Set<id> of lockers passing station filter; null = filter off
-let nearCacheKey = '';            // memoization key for the above
+const activeStationKinds = new Set();
 
 // ---------- bootstrap ----------------------------------------------------
 async function init() {
@@ -88,6 +104,12 @@ async function init() {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     maxZoom: 19,
   }).addTo(map);
+  // One unified cluster for every network. Previously each source had its
+  // own clustering (Amazon, InPost) or no clustering at all (Morrisons),
+  // which produced overlapping cluster badges and stray markers at low zoom.
+  // Folding everything into one MarkerCluster makes the cluster counts
+  // additive (one "127" per area, not three) and the cluster expansion
+  // animation reveals the per-marker glyph that identifies the network.
   cluster = L.markerClusterGroup({
     chunkedLoading: true,
     spiderfyOnMaxZoom: true,
@@ -97,15 +119,17 @@ async function init() {
   map.addLayer(cluster);
 
   stationLayer = L.layerGroup();
-  kioskLayer = L.layerGroup();
 
   installFilters();
   installPanel();
   installClickMode();
   installStationFilter();
   installKioskFilter();
+  installInpostFilter();
+  installQuadientFilter();
+  installYeepFilter();
 
-  await Promise.all([loadBaseline(), loadStations(), loadKiosks()]);
+  await Promise.all([loadBaseline(), loadStations(), loadKiosks(), loadInpost(), loadQuadient(), loadYeep()]);
   updateStationCounts();
 }
 
@@ -134,35 +158,135 @@ function installKioskFilter() {
   if (!cb) return;
   cb.addEventListener('change', () => {
     showKiosks = cb.checked;
-    if (showKiosks) {
-      redrawKiosksLayer();
-      map.addLayer(kioskLayer);
-    } else {
-      map.removeLayer(kioskLayer);
-    }
+    rebuildAllMarkers();
   });
 }
 
-function redrawKiosksLayer() {
-  kioskLayer.clearLayers();
-  for (const k of kiosks) {
-    const lat = k.location && k.location.latitude;
-    const lng = k.location && k.location.longitude;
-    if (typeof lat !== 'number' || typeof lng !== 'number') continue;
-    const m = L.marker([lat, lng], {
-      icon: L.divIcon({
-        className: 'kiosk-marker',
-        html: '<span class="dot kiosk-dot"></span>',
-        iconSize: [18, 18],
-        iconAnchor: [9, 9],
-      }),
-    });
-    m.bindTooltip(k.storeName || 'Morrisons kiosk',
-                  { direction: 'top', offset: [0, -6] });
-    const id = String(k.id);
-    m.on('click', () => openKioskPanel(id));
-    kioskLayer.addLayer(m);
+async function loadInpost() {
+  const setCount = (sel, n) => {
+    const el = document.querySelector(sel);
+    if (el) el.textContent = (n || 0).toLocaleString();
+  };
+  try {
+    const r = await fetch('/data/inpost_lockers.json');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    inpostPoints = data.lockers || [];
+    inpostById.clear();
+    for (const p of inpostPoints) {
+      if (p.id) inpostById.set(String(p.id), p);
+    }
+    setCount('#inpost-count', inpostPoints.length);
+    const counts = (data.countByType) || {};
+    setCount('[data-inpost-type-count="parcel_locker"]', counts.parcel_locker);
+    setCount('[data-inpost-type-count="pok"]', (counts.pok || 0) + (counts.pop || 0));
+  } catch (e) {
+    console.warn('Could not load InPost:', e);
+    inpostPoints = [];
+    const cb = document.getElementById('show-inpost');
+    if (cb) cb.disabled = true;
   }
+}
+
+function installInpostFilter() {
+  const cb = document.getElementById('show-inpost');
+  if (cb) {
+    cb.addEventListener('change', () => {
+      showInpost = cb.checked;
+      rebuildAllMarkers();
+    });
+  }
+  document.querySelectorAll('input[data-inpost-type]').forEach(c => {
+    c.addEventListener('change', () => {
+      const t = c.dataset.inpostType;
+      if (c.checked) activeInpostTypes.add(t); else activeInpostTypes.delete(t);
+      // 'pok' checkbox controls both 'pok' and 'pop' (treated as one).
+      if (t === 'pok') {
+        if (c.checked) activeInpostTypes.add('pop'); else activeInpostTypes.delete('pop');
+      }
+      rebuildAllMarkers();
+    });
+  });
+}
+
+async function loadQuadient() {
+  const countEl = document.getElementById('quadient-count');
+  const cb = document.getElementById('show-quadient');
+  try {
+    const r = await fetch('/data/quadient_lockers.json');
+    if (!r.ok) {
+      // Read whatever body the server sent (the project's own 404
+      // response is JSON with an `error` key; an old server without
+      // the route returns HTML — capture either).
+      const body = await r.text().catch(() => '');
+      throw new Error(`HTTP ${r.status}${body ? ' — ' + body.slice(0, 120) : ''}`);
+    }
+    const data = await r.json();
+    quadientPoints = data.lockers || [];
+    quadientById.clear();
+    for (const p of quadientPoints) {
+      if (p.id) quadientById.set(String(p.id), p);
+    }
+    if (countEl) countEl.textContent = quadientPoints.length.toLocaleString();
+  } catch (e) {
+    console.warn('Could not load Quadient:', e);
+    quadientPoints = [];
+    if (cb) {
+      cb.disabled = true;
+      // Surface the reason on hover so the failure isn't silent.
+      const lbl = cb.closest('label');
+      if (lbl) lbl.title = `Quadient data unavailable: ${e.message || e}`;
+    }
+    // Use the same em-dash placeholder as the other counts use before
+    // load — easier to spot than a misleading "0".
+    if (countEl) countEl.textContent = '–';
+  }
+}
+
+function installQuadientFilter() {
+  const cb = document.getElementById('show-quadient');
+  if (!cb) return;
+  cb.addEventListener('change', () => {
+    showQuadient = cb.checked;
+    rebuildAllMarkers();
+  });
+}
+
+async function loadYeep() {
+  const countEl = document.getElementById('yeep-count');
+  const cb = document.getElementById('show-yeep');
+  try {
+    const r = await fetch('/data/yeep_lockers.json');
+    if (!r.ok) {
+      const body = await r.text().catch(() => '');
+      throw new Error(`HTTP ${r.status}${body ? ' — ' + body.slice(0, 120) : ''}`);
+    }
+    const data = await r.json();
+    yeepPoints = data.lockers || [];
+    yeepById.clear();
+    for (const p of yeepPoints) {
+      if (p.id) yeepById.set(String(p.id), p);
+    }
+    if (countEl) countEl.textContent = yeepPoints.length.toLocaleString();
+  } catch (e) {
+    console.warn('Could not load Yeep:', e);
+    yeepPoints = [];
+    if (cb) {
+      cb.disabled = true;
+      const lbl = cb.closest('label');
+      if (lbl) lbl.title = `Yeep data unavailable: ${e.message || e}`;
+    }
+    if (countEl) countEl.textContent = '–';
+  }
+}
+
+function installYeepFilter() {
+  const cb = document.getElementById('show-yeep');
+  if (!cb) return;
+  cb.addEventListener('change', () => {
+    showYeep = cb.checked;
+    rebuildAllMarkers();
+  });
 }
 
 async function loadStations() {
@@ -233,28 +357,14 @@ function lockerNearStation(lat, lng, radiusM, kinds) {
   return false;
 }
 
-function recomputeNearLockerIds() {
-  if (!nearStationOn) {
-    nearLockerIds = null;
-    nearCacheKey = '';
-    return;
-  }
-  const key = stationRadiusM + ':' + [...activeStationKinds].sort().join(',');
-  if (key === nearCacheKey && nearLockerIds) return;
-  const ids = new Set();
-  let n = 0;
-  for (const l of lockers) {
-    if (!hasValidCoords(l)) continue;
-    if (lockerNearStation(l.location.latitude, l.location.longitude,
-                           stationRadiusM, activeStationKinds)) {
-      const id = lockerId(l);
-      if (id) { ids.add(id); n++; }
-    }
-  }
-  nearLockerIds = ids;
-  nearCacheKey = key;
-  document.getElementById('station-summary').textContent =
-    `${n.toLocaleString()} lockers within ${formatDist(stationRadiusM)} of a matching station.`;
+// Network-agnostic station filter. Returns true when the marker should be
+// drawn — either the filter is off, or the point sits within radius of an
+// active-kind station. Replaces an Amazon-only precompute that produced
+// `nearLockerIds`; we now check inline so InPost / Quadient / Yeep /
+// Morrisons obey the filter too.
+function passesStationFilter(lat, lng) {
+  if (!nearStationOn) return true;
+  return lockerNearStation(lat, lng, stationRadiusM, activeStationKinds);
 }
 
 function formatDist(m) {
@@ -297,8 +407,9 @@ function discoverAmazonTypes() {
   const known = Object.keys(TYPE_META).filter(t => seen.has(t));
   const unknown = [...seen].filter(t => !TYPE_META[t]).sort();
   amazonTypes = [...known, ...unknown];
+  // Default off — user opts in via the per-row checkboxes or the
+  // "all · none" toggle next to the section header.
   activeTypes.clear();
-  for (const t of amazonTypes) activeTypes.add(t);
 }
 
 function discoverProviders() {
@@ -312,8 +423,9 @@ function discoverProviders() {
   const unknown = [...seen].filter(p => p !== 'other' && !PROVIDER_META[p]).sort();
   providers = [...known, ...unknown];
   if (seen.has('other')) providers.push('other');
+  // Default off — user opts in via the per-row checkboxes or the
+  // "all · none" toggle next to the section header.
   activeProviders.clear();
-  for (const p of providers) activeProviders.add(p);
 }
 
 function renderProviderRows() {
@@ -326,7 +438,7 @@ function renderProviderRows() {
     styleParts.push(`.dot-provider-${cssId(p)}{background:${meta.color};}`);
     const label = document.createElement('label');
     label.innerHTML =
-      `<input type="checkbox" data-provider="${escAttr(p)}" checked />` +
+      `<input type="checkbox" data-provider="${escAttr(p)}" />` +
       `<span class="dot dot-provider-${cssId(p)}"></span> ${escHtml(meta.label)} ` +
       `<span class="count" data-provider-count="${escAttr(p)}">–</span>`;
     host.appendChild(label);
@@ -357,7 +469,7 @@ function renderTypeRows() {
     styleParts.push(`.dot-type-${cssId(t)}{background:${meta.color};}`);
     const label = document.createElement('label');
     label.innerHTML =
-      `<input type="checkbox" data-type="${escAttr(t)}" checked />` +
+      `<input type="checkbox" data-type="${escAttr(t)}" />` +
       `<span class="dot dot-type-${cssId(t)}"></span> ${escHtml(meta.label)} ` +
       `<span class="count" data-count="${escAttr(t)}">–</span>`;
     host.appendChild(label);
@@ -394,51 +506,255 @@ function hasValidCoords(l) {
   return lat >= 49 && lat <= 61.5 && lng >= -9 && lng <= 2.5;
 }
 
-function makeIcon(l) {
-  const t = l.apisAccessPointType;
-  const cls = PROVIDER_TYPES.has(t) ? `provider-${providerOf(l)}` : `type-${cssId(t || 'unknown')}`;
+// Unified marker glyph. One letter, one colour, same shape across every
+// network — colour disambiguates subtype (provider, locker variant) and the
+// glyph disambiguates the network family.
+//   A = Amazon Locker, C = Amazon Counter, R = Returns Kiosk,
+//   L = InPost Locker, S = InPost Shop
+function makeGlyphIcon(glyph, kindClass, colorClass) {
   return L.divIcon({
-    className: 'locker-marker',
-    html: `<span class="dot dot-${cls}"></span>`,
+    className: 'glyph-marker',
+    html: `<span class="glyph ${kindClass} ${colorClass}">${glyph}</span>`,
     iconSize: [18, 18],
     iconAnchor: [9, 9],
   });
 }
 
-function rebuildMarkers() {
-  recomputeNearLockerIds();
+function makeAmazonIcon(l) {
+  const t = l.apisAccessPointType;
+  if (PROVIDER_TYPES.has(t)) {
+    return makeGlyphIcon('C', 'k-counter', `prov-${cssId(providerOf(l))}`);
+  }
+  return makeGlyphIcon('A', 'k-locker', `lt-${cssId(t || 'unknown')}`);
+}
+
+// Rebuild every marker from every source. Replaces the three previously
+// independent rebuild functions; called whenever any filter changes.
+function rebuildAllMarkers() {
   cluster.clearLayers();
-  let plotted = 0, plotable = 0;
-  const batch = [];
+  // Phase 1: collect every visible item with its render and open metadata.
+  // Phase 2 below buckets co-located items so the same physical site (e.g.
+  // a Post Office hosting both an Amazon Counter and an InPost machine)
+  // collapses to one marker. Most cross-network "duplicates" are actually
+  // distinct services at the same address, so we preserve them in a chooser.
+  const items = [];
+  let amazonShown = 0, amazonPlotable = 0;
+
+  // Amazon lockers / counters
   for (const l of lockers) {
     if (!hasValidCoords(l)) continue;
-    plotable++;
+    amazonPlotable++;
     const t = l.apisAccessPointType;
     if (PROVIDER_TYPES.has(t)) {
       if (!activeProviders.has(providerOf(l))) continue;
     } else if (!activeTypes.has(t)) {
       continue;
     }
-    if (nearLockerIds && !nearLockerIds.has(lockerId(l))) continue;
-    const m = L.marker([l.location.latitude, l.location.longitude], {
-      icon: makeIcon(l),
-    });
+    if (!passesStationFilter(l.location.latitude, l.location.longitude)) continue;
     const id = lockerId(l);
-    m.lockerId = id;
-    m.on('click', () => openPanel(id));
-    batch.push(m);
-    plotted++;
+    items.push({
+      lat: l.location.latitude, lng: l.location.longitude,
+      icon: makeAmazonIcon(l),
+      label: l.name || 'Amazon access point',
+      kindLabel: PROVIDER_TYPES.has(t) ? 'Amazon Counter' : 'Amazon Locker',
+      open: () => openPanel(id),
+    });
+    amazonShown++;
+  }
+
+  // Morrisons returns kiosks
+  let kioskShown = 0;
+  if (showKiosks) {
+    for (const k of kiosks) {
+      const lat = k.location && k.location.latitude;
+      const lng = k.location && k.location.longitude;
+      if (typeof lat !== 'number' || typeof lng !== 'number') continue;
+      if (!passesStationFilter(lat, lng)) continue;
+      const id = String(k.id);
+      items.push({
+        lat, lng,
+        icon: makeGlyphIcon('R', 'k-kiosk', ''),
+        label: k.storeName || 'Morrisons kiosk',
+        kindLabel: 'Morrisons returns kiosk',
+        open: () => openKioskPanel(id),
+      });
+      kioskShown++;
+    }
+  }
+
+  // InPost
+  let inpostShown = 0;
+  if (showInpost) {
+    for (const p of inpostPoints) {
+      const t = p.type || 'parcel_locker';
+      const filterKey = (t === 'pop') ? 'pok' : t;
+      if (!activeInpostTypes.has(filterKey)) continue;
+      const lat = p.location && p.location.latitude;
+      const lng = p.location && p.location.longitude;
+      if (typeof lat !== 'number' || typeof lng !== 'number') continue;
+      if (!passesStationFilter(lat, lng)) continue;
+      const glyph = filterKey === 'parcel_locker' ? 'L' : 'S';
+      const kindCls = filterKey === 'parcel_locker' ? 'k-inpost-locker' : 'k-inpost-shop';
+      const id = String(p.id);
+      items.push({
+        lat, lng,
+        icon: makeGlyphIcon(glyph, kindCls, ''),
+        label: p.addressLine1 || p.id || 'InPost point',
+        kindLabel: filterKey === 'parcel_locker' ? 'InPost locker' : 'InPost partner shop',
+        open: () => openInpostPanel(id),
+      });
+      inpostShown++;
+    }
+  }
+
+  // Quadient (Parcel Pending) open locker network
+  let quadientShown = 0;
+  if (showQuadient) {
+    for (const p of quadientPoints) {
+      const lat = p.location && p.location.latitude;
+      const lng = p.location && p.location.longitude;
+      if (typeof lat !== 'number' || typeof lng !== 'number') continue;
+      if (!passesStationFilter(lat, lng)) continue;
+      const id = String(p.id);
+      items.push({
+        lat, lng,
+        icon: makeGlyphIcon('Q', 'k-quadient', ''),
+        label: p.host || p.name || 'Parcel Pending locker',
+        kindLabel: 'Quadient locker',
+        open: () => openQuadientPanel(id),
+      });
+      quadientShown++;
+    }
+  }
+
+  // Yeep — UK DPD/UPS locker network
+  let yeepShown = 0;
+  if (showYeep) {
+    for (const p of yeepPoints) {
+      const lat = p.location && p.location.latitude;
+      const lng = p.location && p.location.longitude;
+      if (typeof lat !== 'number' || typeof lng !== 'number') continue;
+      if (!passesStationFilter(lat, lng)) continue;
+      const id = String(p.id);
+      items.push({
+        lat, lng,
+        icon: makeGlyphIcon('Y', 'k-yeep', ''),
+        label: p.name || p.title || 'Yeep locker',
+        kindLabel: 'Yeep locker',
+        open: () => openYeepPanel(id),
+      });
+      yeepShown++;
+    }
+  }
+
+  // Phase 2: spatial bucket. ~11m at UK latitudes, which is small enough to
+  // only collapse markers that share an address while leaving distinct
+  // sites separate. A multi-cell merge below catches points that straddle
+  // a bucket boundary.
+  const BUCKET_DEG = 0.0001;
+  const buckets = new Map();
+  for (const it of items) {
+    const key = Math.round(it.lat / BUCKET_DEG) + ',' + Math.round(it.lng / BUCKET_DEG);
+    let b = buckets.get(key);
+    if (!b) { b = []; buckets.set(key, b); }
+    b.push(it);
+  }
+
+  const batch = [];
+  let mergedGroups = 0;
+  for (const [, group] of buckets) {
+    if (group.length === 1) {
+      const it = group[0];
+      const m = L.marker([it.lat, it.lng], { icon: it.icon });
+      m.bindTooltip(it.label, { direction: 'top', offset: [0, -6] });
+      m.on('click', it.open);
+      batch.push(m);
+    } else {
+      mergedGroups++;
+      // Average the cluster's coordinates so the merged pin sits in the middle.
+      const lat = group.reduce((s, x) => s + x.lat, 0) / group.length;
+      const lng = group.reduce((s, x) => s + x.lng, 0) / group.length;
+      const text = group.length >= 10 ? '9+' : String(group.length);
+      const m = L.marker([lat, lng], {
+        icon: makeGlyphIcon(text, 'k-merged', ''),
+      });
+      m.bindTooltip(`${group.length} services at this location`,
+                    { direction: 'top', offset: [0, -6] });
+      m.on('click', () => openMergedPanel(group));
+      batch.push(m);
+    }
   }
   cluster.addLayers(batch);
-  let msg = `${plotted.toLocaleString()} of ${plotable.toLocaleString()} lockers shown`;
+
+  // Refresh the dedicated station-summary line in the sidebar — now reflects
+  // every visible network, not just Amazon.
+  const stationSummaryEl = document.getElementById('station-summary');
+  if (stationSummaryEl) {
+    if (nearStationOn) {
+      const total = items.length;
+      stationSummaryEl.textContent =
+        `${total.toLocaleString()} location${total === 1 ? '' : 's'} ` +
+        `within ${formatDist(stationRadiusM)} of a matching station.`;
+    } else {
+      stationSummaryEl.textContent = '';
+    }
+  }
+
+  const totalShown = amazonShown + kioskShown + inpostShown + quadientShown + yeepShown;
+  const parts = [];
+  if (amazonShown) parts.push(`${amazonShown.toLocaleString()} Amazon`);
+  if (kioskShown) parts.push(`${kioskShown.toLocaleString()} Morrisons`);
+  if (inpostShown) parts.push(`${inpostShown.toLocaleString()} InPost`);
+  if (quadientShown) parts.push(`${quadientShown.toLocaleString()} Quadient`);
+  if (yeepShown) parts.push(`${yeepShown.toLocaleString()} Yeep`);
+  let msg = totalShown === 0
+    ? 'No locations shown — pick a filter on the left'
+    : `${totalShown.toLocaleString()} shown · ${parts.join(' + ')}`;
+  if (mergedGroups) {
+    msg += ` · ${mergedGroups.toLocaleString()} co-located groups merged`;
+  }
   if (nearStationOn) {
     msg += ` · within ${formatDist(stationRadiusM)} of station`;
   }
-  if (lockers.length !== plotable) {
-    msg += ` · ${(lockers.length - plotable).toLocaleString()} have invalid coords`;
+  if (lockers.length !== amazonPlotable) {
+    msg += ` · ${(lockers.length - amazonPlotable).toLocaleString()} dropped (bad coords)`;
   }
   setStats(msg);
 }
+
+// Merged-panel chooser: lists every service at the clicked spot. Clicking a
+// row jumps to that service's regular panel via its existing open handler.
+function openMergedPanel(group) {
+  const el = document.getElementById('panel-content');
+  document.getElementById('panel-refresh').hidden = true;
+  currentPanelKind = 'merged';
+  currentPanelId = null;
+  setPanelStatus('');
+  let html = `<h2>${group.length} services at this location</h2>`;
+  html += `<p class="hint">Different operators sometimes co-locate hardware ` +
+          `at the same site. Click an entry to see its details.</p>`;
+  html += `<ul class="merged-list">`;
+  for (let i = 0; i < group.length; i++) {
+    html += `<li><button data-i="${i}" class="merged-row">` +
+            `<span class="merged-kind">${escHtml(group[i].kindLabel)}</span>` +
+            `<span class="merged-label">${escHtml(group[i].label)}</span>` +
+            `</button></li>`;
+  }
+  html += `</ul>`;
+  el.innerHTML = html;
+  el.querySelectorAll('button.merged-row').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = Number(btn.dataset.i);
+      const it = group[idx];
+      if (it && typeof it.open === 'function') it.open();
+    });
+  });
+  document.getElementById('panel').hidden = false;
+}
+
+// Backwards-compatible alias — many callers (filter handlers, station
+// filter, bulk toggle) still call rebuildMarkers() by name.
+const rebuildMarkers = rebuildAllMarkers;
 
 function setStats(text) { document.getElementById('stats').textContent = text; }
 
@@ -464,6 +780,33 @@ function updateTypeCounts() {
 function installFilters() {
   // Type and provider rows are rendered (and wired) dynamically after data
   // loads. See renderTypeRows / renderProviderRows.
+  // Bulk "all / none" toggles for the Amazon filter groups. Static HTML
+  // hooks (data-target=type|provider, data-act=all|none) so we don't have
+  // to re-bind on every render.
+  document.querySelectorAll('.toggle-all').forEach(span => {
+    span.addEventListener('click', e => {
+      const a = e.target.closest('a[data-act]');
+      if (!a) return;
+      const checked = a.dataset.act === 'all';
+      const target = span.dataset.target;
+      if (target === 'type') setAllAmazonTypes(checked);
+      else if (target === 'provider') setAllProviders(checked);
+    });
+  });
+}
+
+function setAllAmazonTypes(checked) {
+  document.querySelectorAll('input[data-type]').forEach(cb => { cb.checked = checked; });
+  activeTypes.clear();
+  if (checked) for (const t of amazonTypes) activeTypes.add(t);
+  rebuildMarkers();
+}
+
+function setAllProviders(checked) {
+  document.querySelectorAll('input[data-provider]').forEach(cb => { cb.checked = checked; });
+  activeProviders.clear();
+  if (checked) for (const p of providers) activeProviders.add(p);
+  rebuildMarkers();
 }
 
 // ---------- station filter ----------------------------------------------
@@ -474,14 +817,12 @@ function installStationFilter() {
   });
   document.getElementById('station-radius').addEventListener('change', e => {
     stationRadiusM = Number(e.target.value);
-    nearCacheKey = '';
     rebuildMarkers();
   });
   document.querySelectorAll('input[data-station-kind]').forEach(cb => {
     cb.addEventListener('change', () => {
       const k = cb.dataset.stationKind;
       if (cb.checked) activeStationKinds.add(k); else activeStationKinds.delete(k);
-      nearCacheKey = '';
       rebuildMarkers();
       redrawStationsLayer();
     });
@@ -549,6 +890,83 @@ function openKioskPanel(id) {
   renderKioskPanel(k);
   setPanelStatus('');
   document.getElementById('panel').hidden = false;
+}
+
+function openInpostPanel(id) {
+  const p = inpostById.get(id);
+  if (!p) return;
+  currentPanelId = id;
+  currentPanelKind = 'inpost';
+  document.getElementById('panel-refresh').hidden = true;
+  renderInpostPanel(p);
+  setPanelStatus('');
+  document.getElementById('panel').hidden = false;
+  if (p.type === 'parcel_locker') fetchInpostLive(id);
+}
+
+function openQuadientPanel(id) {
+  const p = quadientById.get(id);
+  if (!p) return;
+  currentPanelId = id;
+  currentPanelKind = 'quadient';
+  document.getElementById('panel-refresh').hidden = true;
+  renderQuadientPanel(p);
+  setPanelStatus('');
+  document.getElementById('panel').hidden = false;
+}
+
+function openYeepPanel(id) {
+  const p = yeepById.get(id);
+  if (!p) return;
+  currentPanelId = id;
+  currentPanelKind = 'yeep';
+  document.getElementById('panel-refresh').hidden = true;
+  renderYeepPanel(p);
+  setPanelStatus('');
+  document.getElementById('panel').hidden = false;
+}
+
+// InPost compartment status (A=Small, B=Medium, C=Large) and an overall
+// reading. Hits a server-side proxy that calls the InPost API per click.
+async function fetchInpostLive(id) {
+  let res;
+  try {
+    const r = await fetch(`/api/inpost/${encodeURIComponent(id)}/refresh`);
+    res = await r.json();
+    if (!r.ok) throw new Error(res.error || `HTTP ${r.status}`);
+  } catch (e) {
+    // The panel may have moved on to a different locker by the time the
+    // fetch resolves — only paint into the slot if it's still ours.
+    if (currentPanelKind !== 'inpost' || currentPanelId !== id) return;
+    const slot = document.getElementById('inpost-live-val');
+    if (slot) slot.innerHTML = `<span class="err">Live fetch failed: ${escHtml(e.message)}</span>`;
+    return;
+  }
+  if (currentPanelKind !== 'inpost' || currentPanelId !== id) return;
+  const slot = document.getElementById('inpost-live-val');
+  if (!slot) return;
+  // The InPost API exposes coarse fill levels per compartment size. We map
+  // each code to a colour + plain-English word so users don't need to learn
+  // InPost's vocabulary — green = lots free, yellow = some, red = full.
+  const STATUS_LABEL = {
+    NORMAL:   'Available',
+    LOW:      'Limited',
+    VERY_LOW: 'Full',
+    NO_DATA:  'No data',
+  };
+  const SIZES = [
+    ['A', 'Small'],
+    ['B', 'Medium'],
+    ['C', 'Large'],
+  ];
+  const pills = SIZES.map(([k, label]) => {
+    const code = (res.compartments || {})[k] || 'NO_DATA';
+    const status = STATUS_LABEL[code] || STATUS_LABEL.NO_DATA;
+    return `<div class="avail-pill avail-${cssId(code)}">` +
+           `<div class="avail-size">${escHtml(label)}</div>` +
+           `<div class="avail-status">${escHtml(status)}</div></div>`;
+  }).join('');
+  slot.innerHTML = `<div class="avail-row">${pills}</div>`;
 }
 
 function closePanel() {
@@ -622,6 +1040,169 @@ function renderKioskPanel(k) {
   if (k.storefinderUrl) {
     html += `<div class="field"><div class="field-key">Store page</div>` +
             `<div class="field-val"><a href="${escAttr(k.storefinderUrl)}" target="_blank" rel="noopener">my.morrisons.com</a></div></div>`;
+  }
+  if (dirHref) {
+    html += `<div class="field"><div class="field-key">Directions</div>` +
+            `<div class="field-val"><a href="${escAttr(dirHref)}" target="_blank" rel="noopener">Open in Google Maps</a></div></div>`;
+  }
+  el.innerHTML = html;
+}
+
+function renderInpostPanel(p) {
+  const el = document.getElementById('panel-content');
+  const lat = p.location && p.location.latitude;
+  const lng = p.location && p.location.longitude;
+  const dirHref = (typeof lat === 'number' && typeof lng === 'number')
+    ? `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}` : null;
+  const typeLabel = p.type === 'parcel_locker' ? 'Parcel locker'
+                  : (p.type === 'pok' || p.type === 'pop') ? 'Partner shop' : (p.type || 'InPost');
+  let html = `<h2>${escHtml(p.addressLine1 || p.id || 'InPost point')}</h2>`;
+  html += `<div><span class="badge">${escHtml(typeLabel)}</span>`;
+  if (p.is247) html += ` <span class="badge">24/7</span>`;
+  if (p.locationType) html += ` <span class="badge">${escHtml(p.locationType)}</span>`;
+  if (p.easyAccess) html += ` <span class="badge">Easy access</span>`;
+  html += `</div>`;
+  const addrLines = [p.addressLine2, p.city, p.province, p.postcode]
+    .filter(Boolean).map(escHtml).join('<br>');
+  if (addrLines) {
+    html += `<div class="field"><div class="field-key">Address</div>` +
+            `<div class="field-val">${addrLines}</div></div>`;
+  }
+  if (p.locationDescription) {
+    html += `<div class="field"><div class="field-key">Where to find it</div>` +
+            `<div class="field-val">${escHtml(p.locationDescription)}</div></div>`;
+  }
+  if (p.openingHours) {
+    html += `<div class="field"><div class="field-key">Opening hours</div>` +
+            `<div class="field-val">${escHtml(p.openingHours)}</div></div>`;
+  }
+  const flags = [];
+  if (p.supportsCollect) flags.push('Collect');
+  if (p.supportsSend) flags.push('Send');
+  if (p.supportsReturn) flags.push('Return');
+  if (flags.length) {
+    html += `<div class="field"><div class="field-key">Functions</div>` +
+            `<div class="field-val">${flags.join(', ')}</div></div>`;
+  }
+  // Live compartment availability is fetched per-locker on demand. We render
+  // a placeholder slot here and fill it in when openInpostPanel() finishes
+  // its /api/inpost/{id}/refresh call. Partner shops (pok/pop) don't have
+  // compartments, so skip the section for them.
+  if (p.type === 'parcel_locker') {
+    html += `<div class="field" id="inpost-live-slot">` +
+            `<div class="field-key">Live availability</div>` +
+            `<div class="field-val" id="inpost-live-val">` +
+            `<em>Fetching live data…</em></div></div>`;
+  }
+  if (p.imageUrl) {
+    html += `<div class="field"><div class="field-key">Photo</div>` +
+            `<div class="field-val"><a href="${escAttr(p.imageUrl)}" target="_blank" rel="noopener">view</a></div></div>`;
+  }
+  html += `<div class="field"><div class="field-key">ID</div>` +
+          `<div class="field-val">${escHtml(p.id || '')}</div></div>`;
+  if (dirHref) {
+    html += `<div class="field"><div class="field-key">Directions</div>` +
+            `<div class="field-val"><a href="${escAttr(dirHref)}" target="_blank" rel="noopener">Open in Google Maps</a></div></div>`;
+  }
+  el.innerHTML = html;
+}
+
+function renderQuadientPanel(p) {
+  const el = document.getElementById('panel-content');
+  const a = p.address || {};
+  const addrLines = [...(a.lines || []), a.city, a.county, a.postcode]
+    .filter(Boolean).map(escHtml).join('<br>');
+  const lat = p.location && p.location.latitude;
+  const lng = p.location && p.location.longitude;
+  const dirHref = (typeof lat === 'number' && typeof lng === 'number')
+    ? `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}` : null;
+  const oh = p.openingHours || {};
+  const stasher = p.stasher || {};
+
+  let html = `<h2>${escHtml(p.host || p.name || 'Parcel Pending locker')}</h2>`;
+  html += `<div>`;
+  html += `<span class="badge">Parcel Pending</span>`;
+  if (oh.open24_7) html += ` <span class="badge">24/7</span>`;
+  else if (oh.openLate) html += ` <span class="badge">Open late</span>`;
+  if (stasher.featured) html += ` <span class="badge">Featured</span>`;
+  if (stasher.premium) html += ` <span class="badge">Premium</span>`;
+  if (stasher.new) html += ` <span class="badge">New</span>`;
+  if (stasher.stepFreeAccess) html += ` <span class="badge">Step-free</span>`;
+  html += `</div>`;
+
+  if (stasher.alert) {
+    html += `<p class="bad-coord-warn">${escHtml(stasher.alert)}</p>`;
+  }
+
+  if (addrLines) {
+    html += `<div class="field"><div class="field-key">Address</div>` +
+            `<div class="field-val">${addrLines}</div></div>`;
+  }
+  if (stasher.nearestLandmark) {
+    html += `<div class="field"><div class="field-key">Nearest landmark</div>` +
+            `<div class="field-val">${escHtml(stasher.nearestLandmark)}</div></div>`;
+  }
+  if (stasher.capacity != null && stasher.capacity > 0) {
+    const sizeBit = stasher.sizeRestrictions ? ` (${escHtml(stasher.sizeRestrictions)} only)` : '';
+    html += `<div class="field"><div class="field-key">Capacity</div>` +
+            `<div class="field-val">${stasher.capacity} compartments${sizeBit}</div></div>`;
+  } else if (stasher.sizeRestrictions) {
+    html += `<div class="field"><div class="field-key">Size</div>` +
+            `<div class="field-val">${escHtml(stasher.sizeRestrictions)}</div></div>`;
+  }
+  if (stasher.ratingCount && stasher.rating != null) {
+    html += `<div class="field"><div class="field-key">Rating</div>` +
+            `<div class="field-val">${stasher.rating}/5 (${stasher.ratingCount} reviews)</div></div>`;
+  }
+
+  // Legacy per-day opening hours from the old Apps Script feed. Keep the
+  // table when present so existing manually-curated records still render.
+  const DAYS = [['mon','Mon'],['tue','Tue'],['wed','Wed'],['thu','Thu'],['fri','Fri'],['sat','Sat'],['sun','Sun']];
+  if (DAYS.some(([k]) => typeof oh[k] === 'string' && oh[k])) {
+    const ohRows = DAYS.map(([k, label]) =>
+      `<tr><td>${escHtml(label)}</td><td>${escHtml(oh[k] || '—')}</td></tr>`
+    ).join('');
+    html += `<div class="field"><div class="field-key">Hours</div>` +
+            `<div class="field-val"><table class="hours">${ohRows}</table></div></div>`;
+  }
+
+  if (Array.isArray(p.services) && p.services.length) {
+    html += `<div class="field"><div class="field-key">Carriers</div>` +
+            `<div class="field-val">${p.services.map(escHtml).join(', ')}</div></div>`;
+  }
+  if (p.url) {
+    html += `<div class="field"><div class="field-key">Stasher page</div>` +
+            `<div class="field-val"><a href="${escAttr(p.url)}" target="_blank" rel="noopener">Open in Stasher</a></div></div>`;
+  }
+  if (dirHref) {
+    html += `<div class="field"><div class="field-key">Directions</div>` +
+            `<div class="field-val"><a href="${escAttr(dirHref)}" target="_blank" rel="noopener">Open in Google Maps</a></div></div>`;
+  }
+  el.innerHTML = html;
+}
+
+function renderYeepPanel(p) {
+  const el = document.getElementById('panel-content');
+  const lat = p.location && p.location.latitude;
+  const lng = p.location && p.location.longitude;
+  const dirHref = (typeof lat === 'number' && typeof lng === 'number')
+    ? `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}` : null;
+  let html = `<h2>${escHtml(p.title || p.name || 'Yeep locker')}</h2>`;
+  html += `<div><span class="badge">Yeep</span>`;
+  for (const c of p.carriers || []) html += ` <span class="badge">${escHtml(c)}</span>`;
+  html += `</div>`;
+  if (p.address) {
+    html += `<div class="field"><div class="field-key">Address</div>` +
+            `<div class="field-val">${escHtml(p.address)}</div></div>`;
+  }
+  if (p.postcode) {
+    html += `<div class="field"><div class="field-key">Postcode</div>` +
+            `<div class="field-val">${escHtml(p.postcode)}</div></div>`;
+  }
+  if (p.what3words) {
+    const url = p.what3wordsUrl || `https://w3w.co/${encodeURIComponent(p.what3words)}`;
+    html += `<div class="field"><div class="field-key">what3words</div>` +
+            `<div class="field-val"><a href="${escAttr(url)}" target="_blank" rel="noopener">///${escHtml(p.what3words)}</a></div></div>`;
   }
   if (dirHref) {
     html += `<div class="field"><div class="field-key">Directions</div>` +

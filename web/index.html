@@ -17,51 +17,104 @@
   </header>
 
   <aside id="filters">
-    <h2>Amazon Lockers</h2>
-    <div id="type-rows"></div>
+    <details class="nav-group" open>
+      <summary>Retailer</summary>
 
-    <h2>Partner Pickup</h2>
-    <div id="provider-rows"></div>
+      <details class="nav-subgroup" open>
+        <summary>Amazon</summary>
 
-    <h2>Amazon Returns Kiosks</h2>
-    <label><input type="checkbox" id="show-kiosks" />
-      <span class="dot kiosk-dot"></span> Morrisons kiosks
-      <span class="count" id="kiosk-count">–</span></label>
-    <p class="hint">Self-service Amazon returns kiosks rolled out across
-       Morrisons stores. Source: Morrisons store finder.</p>
+        <h4>Lockers
+          <span class="toggle-all" data-target="type">
+            <a data-act="all">all</a> · <a data-act="none">none</a>
+          </span>
+        </h4>
+        <div id="type-rows"></div>
 
-    <h2>Near Train Stations</h2>
-    <label><input type="checkbox" id="near-station" />
-      Only show lockers near a station</label>
-    <label class="row">
-      Radius
-      <select id="station-radius">
-        <option value="100">100 m</option>
-        <option value="250">250 m</option>
-        <option value="500" selected>500 m</option>
-        <option value="1000">1 km</option>
-        <option value="2000">2 km</option>
-        <option value="5000">5 km</option>
-      </select>
-    </label>
-    <label class="indent">Station kinds:</label>
-    <label class="indent"><input type="checkbox" data-station-kind="rail" checked /> National rail
-      <span class="count" data-station-count="rail">–</span></label>
-    <label class="indent"><input type="checkbox" data-station-kind="subway" checked /> Tube
-      <span class="count" data-station-count="subway">–</span></label>
-    <label class="indent"><input type="checkbox" data-station-kind="light_rail" checked /> DLR / Tram
-      <span class="count" data-station-count="light_rail">–</span></label>
-    <label><input type="checkbox" id="show-stations" /> Draw stations on map</label>
-    <p class="hint" id="station-summary"></p>
+        <h4>Pickup Counters
+          <span class="toggle-all" data-target="provider">
+            <a data-act="all">all</a> · <a data-act="none">none</a>
+          </span>
+        </h4>
+        <div id="provider-rows"></div>
 
-    <h2>Live API</h2>
-    <p class="hint">Each locker's panel has a <strong>Refresh from live API</strong>
-       button. The page itself is served from the cached JSON; refresh hits
-       Amazon directly to get current hours, restrictions, and any new
-       lockers nearby.</p>
-    <p class="hint">Or click anywhere on the map with
-       <label class="inline"><input type="checkbox" id="click-mode" />
-       click-to-query mode</label> on to query the live API at that point.</p>
+        <h4>Returns Kiosks</h4>
+        <label><input type="checkbox" id="show-kiosks" />
+          <span class="dot kiosk-dot"></span> Morrisons kiosks
+          <span class="count" id="kiosk-count">–</span></label>
+        <p class="hint">Self-service Amazon returns kiosks rolled out across
+           Morrisons stores. Source: Morrisons store finder.</p>
+
+        <h4>Live API</h4>
+        <p class="hint">Each locker's panel has a <strong>Refresh from live API</strong>
+           button. The page itself is served from the cached JSON; refresh hits
+           Amazon directly to get current hours, restrictions, and any new
+           lockers nearby.</p>
+        <p class="hint">Or click anywhere on the map with
+           <label class="inline"><input type="checkbox" id="click-mode" />
+           click-to-query mode</label> on to query the live API at that point.</p>
+      </details>
+
+      <details class="nav-subgroup" open>
+        <summary>Quadient (Parcel Pending)</summary>
+        <label><input type="checkbox" id="show-quadient" />
+          <span class="dot quadient-dot"></span> Show Parcel Pending lockers
+          <span class="count" id="quadient-count">–</span></label>
+        <p class="hint">UK Quadient (Parcel Pending) network — sourced from
+           Stasher's API which indexes the full live locker fleet (~1,500
+           sites, vs the 200 published on Quadient's own locator).</p>
+      </details>
+
+      <details class="nav-subgroup" open>
+        <summary>Yeep</summary>
+        <label><input type="checkbox" id="show-yeep" />
+          <span class="dot yeep-dot"></span> Show Yeep lockers
+          <span class="count" id="yeep-count">–</span></label>
+        <p class="hint">Yeep's UK locker network — primarily DPD with UPS at
+           ~26% of sites. Source: yeeplockers.com.</p>
+      </details>
+
+      <details class="nav-subgroup" open>
+        <summary>InPost</summary>
+        <label><input type="checkbox" id="show-inpost" />
+          Show InPost points <span class="count" id="inpost-count">–</span></label>
+        <label class="indent"><input type="checkbox" data-inpost-type="parcel_locker" />
+          <span class="dot inpost-dot type-parcel_locker"></span> Parcel lockers
+          <span class="count" data-inpost-type-count="parcel_locker">–</span></label>
+        <label class="indent"><input type="checkbox" data-inpost-type="pok" />
+          <span class="dot inpost-dot type-pok"></span> Counter Locations
+          <span class="count" data-inpost-type-count="pok">–</span></label>
+        <p class="hint">Public InPost network — outdoor 24/7 lockers and indoor
+           partner shop desks. Excludes points marked Disabled / Non-operating.</p>
+      </details>
+    </details>
+
+    <details class="nav-group">
+      <summary>Advanced filters</summary>
+
+      <h4>Near Train Stations</h4>
+      <label><input type="checkbox" id="near-station" />
+        Only show locations near a station</label>
+      <label class="row">
+        Radius
+        <select id="station-radius">
+          <option value="100">100 m</option>
+          <option value="250">250 m</option>
+          <option value="500" selected>500 m</option>
+          <option value="1000">1 km</option>
+          <option value="2000">2 km</option>
+          <option value="5000">5 km</option>
+        </select>
+      </label>
+      <label class="indent">Station kinds:</label>
+      <label class="indent"><input type="checkbox" data-station-kind="rail" /> National rail
+        <span class="count" data-station-count="rail">–</span></label>
+      <label class="indent"><input type="checkbox" data-station-kind="subway" /> Tube
+        <span class="count" data-station-count="subway">–</span></label>
+      <label class="indent"><input type="checkbox" data-station-kind="light_rail" /> DLR / Tram
+        <span class="count" data-station-count="light_rail">–</span></label>
+      <label><input type="checkbox" id="show-stations" /> Draw stations on map</label>
+      <p class="hint" id="station-summary"></p>
+    </details>
   </aside>
 
   <main id="map"></main>

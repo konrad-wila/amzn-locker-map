@@ -35,6 +35,113 @@ aside h2 {
   margin: 18px 0 8px;
 }
 aside h2:first-of-type { margin-top: 0; }
+
+/* Sub-heading inside a nav-group compartment. Smaller and lighter than the
+   compartment summary so the hierarchy reads top-down. */
+aside h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #999;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  margin: 14px 0 6px;
+}
+aside h3:first-of-type { margin-top: 4px; }
+
+/* h4 sits inside a nav-subgroup (e.g. "Amazon Lockers" inside Amazon inside
+   Retailer). Lightest weight in the heading hierarchy. */
+aside h4 {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: #aaa;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  margin: 12px 0 4px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+aside h4:first-of-type { margin-top: 4px; }
+
+/* Inline "all · none" bulk toggles next to a filter section heading.
+   Two clickable links, low contrast so they don't compete with content. */
+.toggle-all {
+  margin-left: auto;
+  font-size: 10px;
+  letter-spacing: 0.3px;
+  color: #bbb;
+  text-transform: none;
+  font-weight: 400;
+}
+.toggle-all a {
+  color: #1976d2;
+  cursor: pointer;
+}
+.toggle-all a:hover { color: #0d4a91; text-decoration: underline; }
+
+/* Collapsible compartment grouping the filters by network/source. The
+   <summary> is the clickable header; default browser triangle is hidden in
+   favour of a custom chevron that flips when open. */
+.nav-group {
+  margin: 0 -20px;
+  padding: 12px 20px;
+  border-bottom: 1px solid #ececec;
+}
+.nav-group:first-of-type { padding-top: 0; }
+.nav-group:last-of-type { border-bottom: 0; }
+.nav-group > summary {
+  list-style: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: #222;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+  padding: 4px 0;
+}
+.nav-group > summary::-webkit-details-marker { display: none; }
+.nav-group > summary::before {
+  content: '';
+  width: 0; height: 0;
+  border-left: 5px solid #999;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform .15s ease;
+}
+.nav-group[open] > summary::before { transform: rotate(90deg); }
+.nav-group > summary:hover { color: #000; }
+
+/* nav-subgroup: a nested compartment one level inside nav-group. Smaller
+   header, indented body, no border (the parent nav-group already bounds it). */
+.nav-subgroup {
+  margin: 8px 0 0;
+  padding: 0 0 0 4px;
+}
+.nav-subgroup > summary {
+  list-style: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: #444;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+  padding: 3px 0;
+}
+.nav-subgroup > summary::-webkit-details-marker { display: none; }
+.nav-subgroup > summary::before {
+  content: '';
+  width: 0; height: 0;
+  border-left: 4px solid #bbb;
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+  transition: transform .15s ease;
+}
+.nav-subgroup[open] > summary::before { transform: rotate(90deg); }
+.nav-subgroup > summary:hover { color: #000; }
 aside label {
   display: flex;
   align-items: center;
@@ -78,16 +185,77 @@ aside select { font: inherit; padding: 4px 6px; border: 1px solid #ccc; border-r
   box-shadow: 0 1px 3px rgba(0,0,0,.5);
 }
 
-/* Morrisons Amazon-returns kiosks: square + brand colours so they're
-   instantly distinguishable from round Amazon-pickup lockers. */
+/* Unified glyph marker. One shape (round) and size (18×18) across every
+   network — colour identifies the subtype, the letter identifies the
+   network family. This replaces the previous mix of round dots, squares
+   and diamonds, which were hard to tell apart at low zoom. */
+.glyph-marker { background: transparent; border: 0; }
+.glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,.45);
+  font-family: -apple-system, system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  line-height: 1;
+  color: #fff;
+  letter-spacing: 0;
+}
+/* Network family backgrounds. The provider/locker subtype classes below
+   override `background` to brand colours where defined. */
+.glyph.k-locker { background: #ff9900; }              /* Amazon orange */
+.glyph.k-counter { background: #232f3e; }             /* Amazon "smile" navy */
+.glyph.k-kiosk { background: #004e37; color: #ffd200; } /* Morrisons green/yellow */
+.glyph.k-inpost-locker { background: #ffcc00; color: #1a1a1a; } /* InPost yellow */
+.glyph.k-inpost-shop { background: #757575; }          /* InPost partner shop grey */
+.glyph.k-quadient { background: #d2202c; }             /* Quadient red */
+.glyph.k-yeep { background: #00bfa5; }                 /* Yeep teal */
+/* Merged co-located marker: shows the count of stacked services at one
+   address. Neutral dark grey distinguishes it from network glyphs. */
+.glyph.k-merged {
+  background: #2a2a2a;
+  font-size: 10px;
+  letter-spacing: -0.3px;
+}
+
+/* --- Amazon Locker subtype colours (override .k-locker background) --- */
+.glyph.lt-CORE_LOCKER { background: #1976d2; }
+.glyph.lt-ODIN_LOCKER { background: #003e7e; }
+
+/* --- Amazon Counter provider colours (override .k-counter background) --- */
+.glyph.prov-post_office  { background: #c8102e; }
+.glyph.prov-collect_plus { background: #00a884; }
+.glyph.prov-coop         { background: #00b1e7; color: #1a1a1a; }
+.glyph.prov-asda         { background: #7dc242; color: #1a1a1a; }
+.glyph.prov-waitrose     { background: #3e7c3a; }
+.glyph.prov-morrisons    { background: #ffd200; color: #1a1a1a; }
+.glyph.prov-amazon_fresh { background: #ff9900; }
+.glyph.prov-other        { background: #757575; }
+
+/* Sidebar swatches. The map markers now use glyphs; these legend pills
+   only appear next to the filter checkboxes. */
 .kiosk-dot {
   border-radius: 2px;
-  background: #ffd200;        /* Morrisons yellow */
-  border-color: #004e37;      /* Morrisons green */
+  background: #004e37;
 }
-.kiosk-marker .kiosk-dot {
-  width: 14px; height: 14px;
-  box-shadow: 0 1px 3px rgba(0,0,0,.5);
+.inpost-dot {
+  background: #ffcc00;
+  border-color: #1a1a1a;
+  border-radius: 0;
+  transform: rotate(45deg);
+}
+.inpost-dot.type-pok { background: #757575; }
+.quadient-dot {
+  background: #d2202c;
+  border-radius: 50%;
+}
+.yeep-dot {
+  background: #00bfa5;
+  border-radius: 50%;
 }
 
 /* side panel */
@@ -165,6 +333,64 @@ aside select { font: inherit; padding: 4px 6px; border: 1px solid #ccc; border-r
 .field-val table.hours { border-collapse: collapse; font-size: 12px; }
 .field-val table.hours td { padding: 1px 8px 1px 0; }
 .field-val table.hours td:first-child { color: #666; }
+
+/* Merged-marker chooser: one row per co-located service. */
+.merged-list { list-style: none; padding: 0; margin: 12px 0 0; }
+.merged-list li { margin: 0 0 6px; }
+.merged-row {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  text-align: left;
+  background: #fafafa;
+  border: 1px solid #e3e3e3;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font: inherit;
+  cursor: pointer;
+  gap: 2px;
+}
+.merged-row:hover { background: #fff; border-color: #1976d2; }
+.merged-kind { font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 0.4px; }
+.merged-label { font-size: 13px; color: #222; font-weight: 500; }
+
+/* InPost live compartment availability. Strong solid fills so the
+   state reads at a glance: green = lots free, yellow = some, red = full,
+   grey = the API isn't reporting per-compartment counts. */
+.avail-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-top: 4px;
+}
+.avail-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 8px 6px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  color: #fff;
+  line-height: 1.15;
+}
+.avail-pill .avail-size {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+.avail-pill .avail-status {
+  font-size: 14px;
+  font-weight: 700;
+  margin-top: 2px;
+}
+.avail-pill.avail-NORMAL   { background: #1e8e3e; border-color: #15782e; }
+.avail-pill.avail-LOW      { background: #f4a93a; border-color: #d68b1a; color: #2b1d00; }
+.avail-pill.avail-VERY_LOW { background: #d93025; border-color: #b3261c; }
+.avail-pill.avail-NO_DATA  { background: #cfcfcf; border-color: #b8b8b8; color: #555; }
 .bad-coord-warn {
   background: #fff4e5;
   border: 1px solid #ffb74d;
