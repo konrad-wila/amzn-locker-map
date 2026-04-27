@@ -1,0 +1,182 @@
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: #222; }
+
+body {
+  display: grid;
+  grid-template-areas: "header header" "side map";
+  grid-template-rows: 56px 1fr;
+  grid-template-columns: 300px 1fr;
+}
+
+header {
+  grid-area: header;
+  padding: 0 20px;
+  border-bottom: 1px solid #ddd;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  background: #fff;
+}
+h1 { margin: 0; font-size: 17px; font-weight: 600; }
+#stats { color: #666; font-size: 13px; margin-left: auto; }
+
+aside {
+  grid-area: side;
+  padding: 16px 20px;
+  border-right: 1px solid #ddd;
+  overflow-y: auto;
+  background: #fafafa;
+}
+aside h2 {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #888;
+  letter-spacing: 0.5px;
+  margin: 18px 0 8px;
+}
+aside h2:first-of-type { margin-top: 0; }
+aside label {
+  display: flex;
+  align-items: center;
+  padding: 5px 0;
+  font-size: 14px;
+  cursor: pointer;
+  gap: 8px;
+}
+aside label input { margin: 0; }
+aside .count { margin-left: auto; color: #888; font-variant-numeric: tabular-nums; font-size: 12px; }
+aside .hint { color: #666; font-size: 12px; line-height: 1.4; }
+aside .inline { display: inline; font-size: inherit; padding: 0; }
+aside label.row { gap: 12px; }
+aside label.indent { padding-left: 16px; font-size: 13px; }
+aside select { font: inherit; padding: 4px 6px; border: 1px solid #ccc; border-radius: 4px; flex: 1; }
+
+.station-marker {
+  width: 8px; height: 8px;
+  background: #444;
+  border: 1px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 1px rgba(0,0,0,.6);
+}
+.station-marker.kind-subway { background: #d62728; }
+.station-marker.kind-light_rail { background: #6a3d9a; }
+
+#map { grid-area: map; }
+
+/* marker dots */
+.dot {
+  display: inline-block;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 1px rgba(0,0,0,.6);
+  vertical-align: middle;
+}
+
+.locker-marker .dot {
+  width: 14px; height: 14px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.5);
+}
+
+/* Morrisons Amazon-returns kiosks: square + brand colours so they're
+   instantly distinguishable from round Amazon-pickup lockers. */
+.kiosk-dot {
+  border-radius: 2px;
+  background: #ffd200;        /* Morrisons yellow */
+  border-color: #004e37;      /* Morrisons green */
+}
+.kiosk-marker .kiosk-dot {
+  width: 14px; height: 14px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.5);
+}
+
+/* side panel */
+#panel {
+  position: fixed;
+  top: 56px; right: 0; bottom: 0;
+  width: 400px;
+  background: #fff;
+  box-shadow: -2px 0 12px rgba(0,0,0,.12);
+  padding: 16px 20px;
+  overflow-y: auto;
+  z-index: 500;
+}
+#panel-close {
+  position: absolute;
+  top: 8px; right: 12px;
+  background: transparent;
+  border: 0;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  color: #888;
+}
+#panel-refresh {
+  background: #ff9900;
+  color: #111;
+  border: 0;
+  border-radius: 4px;
+  padding: 8px 14px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  margin: 8px 0 12px;
+}
+#panel-refresh:disabled { opacity: .5; cursor: progress; }
+#panel-status {
+  font-size: 12px;
+  color: #666;
+  min-height: 16px;
+  margin-bottom: 12px;
+}
+#panel-status .ok { color: #2a7e44; }
+#panel-status .err { color: #c0392b; }
+#panel-status .badge {
+  display: inline-block;
+  background: #e6f4ea;
+  color: #2a7e44;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  margin-right: 6px;
+}
+#panel-content h2 { font-size: 16px; margin: 4px 0 8px; }
+.field {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 8px;
+  padding: 5px 0;
+  border-top: 1px solid #f0f0f0;
+  font-size: 13px;
+}
+.field-key { color: #666; word-break: break-word; }
+.field-val { word-break: break-word; }
+.field-val pre {
+  background: #f7f7f7;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  margin: 0;
+  white-space: pre-wrap;
+  max-height: 180px;
+  overflow: auto;
+}
+.field-val em { color: #aaa; font-style: italic; }
+.field-val table.hours { border-collapse: collapse; font-size: 12px; }
+.field-val table.hours td { padding: 1px 8px 1px 0; }
+.field-val table.hours td:first-child { color: #666; }
+.bad-coord-warn {
+  background: #fff4e5;
+  border: 1px solid #ffb74d;
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #663d00;
+  margin: 8px 0;
+}
+
+@media (max-width: 720px) {
+  body { grid-template-areas: "header" "map"; grid-template-columns: 1fr; }
+  aside { display: none; }
+  #panel { width: 100%; top: 56px; }
+}

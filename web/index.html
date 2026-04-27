@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>UK Amazon Lockers</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>UK Amazon Lockers</h1>
+    <div id="stats">Loading…</div>
+  </header>
+
+  <aside id="filters">
+    <h2>Amazon Lockers</h2>
+    <div id="type-rows"></div>
+
+    <h2>Partner Pickup</h2>
+    <div id="provider-rows"></div>
+
+    <h2>Amazon Returns Kiosks</h2>
+    <label><input type="checkbox" id="show-kiosks" />
+      <span class="dot kiosk-dot"></span> Morrisons kiosks
+      <span class="count" id="kiosk-count">–</span></label>
+    <p class="hint">Self-service Amazon returns kiosks rolled out across
+       Morrisons stores. Source: Morrisons store finder.</p>
+
+    <h2>Near Train Stations</h2>
+    <label><input type="checkbox" id="near-station" />
+      Only show lockers near a station</label>
+    <label class="row">
+      Radius
+      <select id="station-radius">
+        <option value="100">100 m</option>
+        <option value="250">250 m</option>
+        <option value="500" selected>500 m</option>
+        <option value="1000">1 km</option>
+        <option value="2000">2 km</option>
+        <option value="5000">5 km</option>
+      </select>
+    </label>
+    <label class="indent">Station kinds:</label>
+    <label class="indent"><input type="checkbox" data-station-kind="rail" checked /> National rail
+      <span class="count" data-station-count="rail">–</span></label>
+    <label class="indent"><input type="checkbox" data-station-kind="subway" checked /> Tube
+      <span class="count" data-station-count="subway">–</span></label>
+    <label class="indent"><input type="checkbox" data-station-kind="light_rail" checked /> DLR / Tram
+      <span class="count" data-station-count="light_rail">–</span></label>
+    <label><input type="checkbox" id="show-stations" /> Draw stations on map</label>
+    <p class="hint" id="station-summary"></p>
+
+    <h2>Live API</h2>
+    <p class="hint">Each locker's panel has a <strong>Refresh from live API</strong>
+       button. The page itself is served from the cached JSON; refresh hits
+       Amazon directly to get current hours, restrictions, and any new
+       lockers nearby.</p>
+    <p class="hint">Or click anywhere on the map with
+       <label class="inline"><input type="checkbox" id="click-mode" />
+       click-to-query mode</label> on to query the live API at that point.</p>
+  </aside>
+
+  <main id="map"></main>
+
+  <section id="panel" hidden>
+    <button id="panel-close" aria-label="Close">×</button>
+    <button id="panel-refresh">Refresh from live API</button>
+    <div id="panel-status"></div>
+    <div id="panel-content"></div>
+  </section>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

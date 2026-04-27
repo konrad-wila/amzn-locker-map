@@ -1,0 +1,212 @@
+{
+  "info": {
+    "_postman_id": "6b9b03d3-cabf-4e1f-9111-b617cf9d5f69",
+    "name": "Amazon Odin Locker",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "33884542"
+  },
+  "item": [
+    {
+      "name": "New Request",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var template = `\r",
+              "<style>\r",
+              "    #map {\r",
+              "        height: 400px;\r",
+              "        width: 100%;\r",
+              "    }\r",
+              "</style>\r",
+              "\r",
+              "<div>\r",
+              "    <label for=\"filter\">Filter by Access Point Type:</label>\r",
+              "    <select id=\"filter\">\r",
+              "        <option value=\"all\">All Locations</option>\r",
+              "        <option value=\"ODIN_LOCKER\">ODIN LOCKER</option>\r",
+              "    </select>\r",
+              "</div>\r",
+              "<div id=\"map\"></div>\r",
+              "\r",
+              "<script src=\"https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.js\"></script>\r",
+              "<link rel=\"stylesheet\" href=\"https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.css\" />\r",
+              "\r",
+              "<script>\r",
+              "    var map = L.map('map').setView([51.2795, -2.105], 10); // Center the map on the provided coordinates\r",
+              "\r",
+              "    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {\r",
+              "        maxZoom: 19,\r",
+              "        attribution: '© OpenStreetMap'\r",
+              "    }).addTo(map);\r",
+              "\r",
+              "    function updateMap(locations) {\r",
+              "        // Clear existing markers\r",
+              "        map.eachLayer(function (layer) {\r",
+              "            if (layer instanceof L.Marker) {\r",
+              "                map.removeLayer(layer);\r",
+              "            }\r",
+              "        });\r",
+              "\r",
+              "        locations.forEach(function(location) {\r",
+              "            if (location.location && location.location.latitude && location.location.longitude) {\r",
+              "                L.marker([location.location.latitude, location.location.longitude]).addTo(map)\r",
+              "                    .bindPopup(location.name || 'Locker Location')\r",
+              "                    .openPopup();\r",
+              "            }\r",
+              "        });\r",
+              "    }\r",
+              "\r",
+              "    pm.getData(function (err, value) {\r",
+              "        var locations = value.response.locationList; // Show all locker locations\r",
+              "        updateMap(locations); // Initial map update\r",
+              "\r",
+              "        // Filter locations based on selection\r",
+              "        document.getElementById('filter').addEventListener('change', function() {\r",
+              "            var selectedType = this.value;\r",
+              "            var filteredLocations = selectedType === 'ODIN_LOCKER' ? \r",
+              "                locations.filter(location => location.apisAccessPointType === selectedType) : \r",
+              "                locations;\r",
+              "            updateMap(filteredLocations);\r",
+              "        });\r",
+              "    });\r",
+              "</script>\r",
+              "`;\r",
+              "\r",
+              "function constructVisualizerPayload() {\r",
+              "    var res = pm.response.json();\r",
+              "    return { response: res };\r",
+              "}\r",
+              "\r",
+              "pm.visualizer.set(template, constructVisualizerPayload());"
+            ],
+            "type": "text/javascript",
+            "packages": {}
+          }
+        },
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Set default search coordinates if not already defined",
+              "// Change these variables in your environment or collection variables to search a different area",
+              "",
+              "if (!pm.variables.get(\"latitude\")) {",
+              "    pm.variables.set(\"latitude\", \"54.9770215543416\");",
+              "}",
+              "",
+              "if (!pm.variables.get(\"longitude\")) {",
+              "    pm.variables.set(\"longitude\", \"-1.5981993984361398\");",
+              "}",
+              "",
+              "// Tip: To search a new location, set these in your environment:",
+              "//   latitude  = e.g. 51.5074  (London)",
+              "//   longitude = e.g. -0.1278"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json",
+            "type": "text"
+          },
+          {
+            "key": "Accept",
+            "value": "text/plain",
+            "type": "text"
+          },
+          {
+            "key": "Accept-Encoding",
+            "value": "gzip, deflate, br, zstd",
+            "type": "text"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-GB,en;q=0.9,pl-PL;q=0.8,pl;q=0.7,en-US;q=0.6",
+            "type": "text"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.amazon.co.uk/a/addresses/add?ref=ya_address_book_add_button",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "https://www.amazon.co.uk/location_selector/fetch_locations?longitude=-1.5981993984361398&latitude=54.9770215543416&clientId=amazon_gb_add_to_addressbook_desktop&countryCode=GB&lowerSlotPreference=false&sortType=RECOMMENDED&userBenefit=true&showFreeShippingLabel=true&showPromotionDetail=true&showAvailableLocations=false",
+          "protocol": "https",
+          "host": [
+            "www",
+            "amazon",
+            "co",
+            "uk"
+          ],
+          "path": [
+            "location_selector",
+            "fetch_locations"
+          ],
+          "query": [
+            {
+              "key": "longitude",
+              "value": "{{longitude}}"
+            },
+            {
+              "key": "latitude",
+              "value": "{{latitude}}"
+            },
+            {
+              "key": "clientId",
+              "value": "amazon_gb_add_to_addressbook_desktop"
+            },
+            {
+              "key": "countryCode",
+              "value": "GB"
+            },
+            {
+              "key": "lowerSlotPreference",
+              "value": "false"
+            },
+            {
+              "key": "sortType",
+              "value": "RECOMMENDED"
+            },
+            {
+              "key": "userBenefit",
+              "value": "true"
+            },
+            {
+              "key": "showFreeShippingLabel",
+              "value": "true"
+            },
+            {
+              "key": "showPromotionDetail",
+              "value": "true"
+            },
+            {
+              "key": "showAvailableLockers",
+              "value": "false"
+            },
+            {
+              "key": "showAvailableLocations",
+              "value": "false"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "New Request",
+      "request": {
+        "method": "GET",
+        "header": []
+      },
+      "response": []
+    }
+  ]
+}
